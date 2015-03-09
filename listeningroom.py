@@ -42,7 +42,7 @@ class ListeningRoomHTTPServer(object):
         r.rpush(room_id + ':future_song_queue', song_id)
 
         # Update other users that song has been added
-        self.notification_pusher_factory.send_message(json.dumps({'song_added': song_id}))
+        self.notification_pusher_factory.send_message(room_id, json.dumps({'song_added': song_id}))
 
         return self.get_room_info(room_id)
 
