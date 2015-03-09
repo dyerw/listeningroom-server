@@ -1,22 +1,31 @@
+import json
+
 from twisted.internet.protocol import Factory
 from twisted.internet import reactor, protocol
-from twisted.web import server, resource
+from twisted.web import server
+from klein import Klein
+
+HTTP_PORT = 5001
+TCP_PORT = 5002
 
 
-class Room(resource.Resource):
-    def __init__(self, notifications):
-        resource.Resource.__init__(self)
-        self.notifications = notifications
+class ListeningRoomHTTPServer(object):
+    """
+    This object handles all HTTP request routing.
+    """
+    app = Klein()
 
-    def render_GET(self, request):
-        self.notifications.send_message("Someone got me\n")
-        return "GOT ME!"
+    def __init__(self, notification_pusher_factory):
+        self.notification_pusher_factory = notification_pusher_factory
 
-    def render_POST(self, request):
-        return "POST ME!"
+    @app.route('/room/<room_id>', methods=['GET'])
+    def get_room_info(self, request, room_id):
+        self.notification_pusher_factory.send_message("Someone wants to know!\n")
+        request.setHeader('Content-Type', 'application/json')
+        return json.dumps({'room_id': room_id})
 
 
-class NotificationProtocol(protocol.Protocol):
+class NotificationPusherProtocol(protocol.Protocol):
     def __init__(self, factory):
         self.factory = factory
 
@@ -27,14 +36,14 @@ class NotificationProtocol(protocol.Protocol):
         self.factory.clients.remove(self)
 
 
-class NotificationFactory(Factory):
-    protocol = NotificationProtocol
+class NotificationPusherFactory(Factory):
+    protocol = NotificationPusherProtocol
 
     def __init__(self):
         self.clients = []
 
     def buildProtocol(self, addr):
-        return NotificationProtocol(self)
+        return NotificationPusherProtocol(self)
 
     def send_message(self, msg):
         for client in self.clients:
@@ -42,9 +51,8 @@ class NotificationFactory(Factory):
 
 
 if __name__ == "__main__":
-    root = resource.Resource()
-    notification_factory = NotificationFactory()
-    root.putChild("room", Room(notification_factory))
-    reactor.listenTCP(5001, server.Site(root))
-    reactor.listenTCP(5002, notification_factory)
+    notification_pusher_factory = NotificationPusherFactory()
+    http_server = ListeningRoomHTTPServer(notification_pusher_factory)
+    reactor.listenTCP(HTTP_PORT, server.Site(http_server.app.resource()))
+    reactor.listenTCP(TCP_PORT, notification_pusher_factory)
     reactor.run()
